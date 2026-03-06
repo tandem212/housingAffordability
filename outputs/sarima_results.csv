@@ -1,0 +1,7 @@
+zip_code,label,order,seasonal_order,mae,rmse,mape_pct
+02126,Mattapan (boston_city),"(1, 1, 1)","(1, 1, 1, 12)",12798.0,16171.0,2.32
+02116,Back Bay (boston_city),"(1, 1, 1)","(1, 1, 1, 12)",35860.0,45115.0,2.76
+02150,Chelsea (inner_suburb),"(1, 1, 1)","(1, 1, 1, 12)",10989.0,13697.0,2.17
+02139,Cambridge (inner_suburb),"(1, 1, 1)","(1, 1, 1, 12)",26581.0,34105.0,2.87
+01840,Lawrence (outer_suburb),"(1, 1, 1)","(1, 1, 1, 12)",13690.0,15639.0,4.08
+02481,Wellesley (outer_suburb),"(1, 1, 1)","(1, 1, 1, 12)",33014.0,40427.0,1.76
