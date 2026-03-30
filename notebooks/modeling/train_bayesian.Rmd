@@ -1,0 +1,150 @@
+---
+title: "train_bayesian"
+author: "Samuel Seelan"
+date: "2026-03-30"
+output: html_document
+---
+
+
+```{r}
+library(brms)
+library(ggplot2)
+```
+
+```{r}
+bayesian_data <- read.csv("/Users/samseelan/Desktop/housingAffordability/outputs/bayesian_data.csv")
+head(bayesian_data)
+bayesian_data$location_tier <- as.factor(bayesian_data$location_tier)
+n <- nrow(bayesian_data)
+n
+```
+```{r}
+plot_df_hist <- data.frame(income_needed = bayesian_data$income_needed)
+
+ggplot(plot_df_hist, aes(x = income_needed)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  labs(x = "Income Needed ($)", y = "Count",
+       title = "Distribution of Income Needed") +
+  theme_minimal()
+```
+
+```{r}
+bayes_formula <- bf(income_needed ~ MORTGAGE30US + UNRATE + CPIAUCSL +
+                      zhvi_yoy_pct + inventory + days_to_pending +
+                      location_tier)
+
+get_prior(bayes_formula, data = bayesian_data, family = gaussian())
+```
+
+```{r}
+bayes_priors <- c(
+  brms::prior(normal(0, 50000), class = Intercept),
+  brms::prior(normal(0, 10000), class = b),
+  brms::prior(exponential(1),   class = sigma)
+)
+```
+
+```{r}
+set.seed(42)
+
+bayes_fit <- brm(
+  formula  = bayes_formula,
+  data     = bayesian_data,
+  family   = gaussian(),
+  prior    = bayes_priors,
+  chains   = 4,
+  iter     = 2000,
+  warmup   = 1000,
+  cores    = 4,
+  seed     = 42
+)
+```
+
+```{r}
+summary(bayes_fit)
+plot(bayes_fit)
+```
+
+```{r}
+post_samples <- as.data.frame(bayes_fit)
+head(post_samples)
+```
+
+```{r}
+plot_df_mort <- data.frame(coef_val = post_samples$b_MORTGAGE30US)
+
+ggplot(plot_df_mort, aes(x = coef_val)) +
+  geom_density(fill = "steelblue", alpha = 0.5) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Coefficient Value", y = "Density",
+       title = "Posterior Distribution: MORTGAGE30US") +
+  theme_minimal()
+```
+
+```{r}
+plot_df_zhvi <- data.frame(coef_val = post_samples$b_zhvi_yoy_pct)
+
+ggplot(plot_df_zhvi, aes(x = coef_val)) +
+  geom_density(fill = "darkorange", alpha = 0.5) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Coefficient Value", y = "Density",
+       title = "Posterior Distribution: zhvi_yoy_pct") +
+  theme_minimal()
+```
+
+```{r}
+post_summary <- as.data.frame(summary(bayes_fit)$fixed)
+post_summary$feature <- rownames(post_summary)
+post_summary <- post_summary[post_summary$feature != "Intercept", ]
+
+plot_df_coefs <- data.frame(
+  feature  = post_summary$feature,
+  estimate = post_summary$Estimate,
+  lower    = post_summary$`l-95% CI`,
+  upper    = post_summary$`u-95% CI`
+)
+
+ggplot(plot_df_coefs, aes(x = estimate, y = feature)) +
+  geom_point(color = "steelblue", size = 3) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, color = "steelblue") +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Posterior Mean (95% Credible Interval)", y = "Feature",
+       title = "Bayesian Regression Coefficients") +
+  theme_minimal()
+```
+
+```{r}
+pp_check(bayes_fit, ndraws = 50)
+
+```
+
+```{r}
+preds_matrix <- posterior_predict(bayes_fit, newdata = bayesian_data)
+pred_means   <- colMeans(preds_matrix)
+
+residuals_vec <- bayesian_data$income_needed - pred_means
+rmse <- sqrt(mean(residuals_vec^2))
+mae  <- mean(abs(residuals_vec))
+
+rmse
+mae
+```
+
+```{r}
+plot_df_preds <- data.frame(
+  actual    = bayesian_data$income_needed,
+  predicted = pred_means
+)
+
+ggplot(plot_df_preds, aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.2, color = "steelblue", size = 0.8) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Actual Income Needed ($)", y = "Predicted Income Needed ($)",
+       title = "Actual vs Predicted: Bayesian Linear Regression") +
+  theme_minimal()
+```
+
+```{r}
+saveRDS(bayes_fit, "/Users/samseelan/Desktop/housingAffordability/outputs/bayesian_model.rds")
+```
+
