@@ -1,166 +1,227 @@
-import streamlit as st
+from pathlib import Path
+
 import pandas as pd
-import numpy as np
-from sklearn.metrics import accuracy_score, classification_report
-
-st.set_page_config(page_title="Housing Stress MLP", layout="wide")
+import streamlit as st
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 
-@st.cache_data
-def load_data():
-    results = pd.read_csv("outputs/mlp_results.csv")
-    sarima = pd.read_csv("outputs/sarima_results.csv")
-    return results, sarima
+ROOT = Path(__file__).resolve().parent
+OUTPUTS = ROOT / "outputs"
+PLOTS = OUTPUTS / "plots"
+ACF_PACF_DIR = OUTPUTS / "acf_pacf"
+
+st.set_page_config(
+    page_title="Boston Housing Affordability",
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 
-results, sarima = load_data()
+def money(x: float) -> str:
+    return f"${x:,.0f}"
 
-# Compute metrics from data
-y_true = results["true_label"]
-y_pred = results["pred_label"]
-y_prob = results["pred_prob"]
 
-accuracy = accuracy_score(y_true, y_pred)
-report = classification_report(y_true, y_pred, output_dict=True)
-hs_precision = report["1"]["precision"]
-hs_recall = report["1"]["recall"]
-macro_f1 = report["macro avg"]["f1-score"]
+def show_image(path: Path) -> None:
+    if path.exists():
+        st.image(str(path), use_container_width=True)
+    else:
+        st.warning(f"Missing image: {path.name}")
 
-# Tabs
-tab1, tab2, tab3 = st.tabs(["About", "MLP Results", "SARIMA Results"])
 
-# About
-with tab1:
+@st.cache_data(show_spinner=False)
+def load_data() -> dict[str, pd.DataFrame]:
+    return {
+        "mlp": pd.read_csv(OUTPUTS / "mlp_results.csv"),
+        "sarima": pd.read_csv(OUTPUTS / "sarima_results.csv"),
+        "bayes_preds": pd.read_csv(OUTPUTS / "bayesian_predictions.csv", parse_dates=["date"]),
+        "bayes_metrics": pd.read_csv(OUTPUTS / "bayesian_metrics.csv"),
+    }
+
+
+data = load_data()
+mlp = data["mlp"].copy()
+sarima = data["sarima"].copy()
+bayes_preds = data["bayes_preds"].copy()
+bayes_metrics = data["bayes_metrics"].copy()
+
+mlp["true_label"] = mlp["true_label"].astype(int)
+mlp["pred_label"] = mlp["pred_label"].astype(int)
+mlp["pred_prob"] = mlp["pred_prob"].astype(float)
+
+bayes_preds["zip_code"] = bayes_preds["zip_code"].astype(str).str.zfill(5)
+
+y_true = mlp["true_label"]
+y_pred = mlp["pred_label"]
+y_prob = mlp["pred_prob"]
+
+mlp_accuracy = accuracy_score(y_true, y_pred)
+mlp_report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
+mlp_recall = mlp_report["1"]["recall"]
+
+bayes_row = bayes_metrics.iloc[0]
+bayes_rmse = float(bayes_row["rmse"])
+bayes_mae = float(bayes_row["mae"])
+bayes_mape = float(bayes_row["mape_pct"])
+
+
+sarima["mape_pct"] = sarima["mape_pct"].astype(float)
+best_sarima = sarima.sort_values("mape_pct").iloc[0]
+worst_sarima = sarima.sort_values("mape_pct", ascending=False).iloc[0]
+
+
+def render_home() -> None:
     st.title("Housing Affordability Stress in Greater Boston")
-    st.markdown("""
-    ## Overview
-    This project predicts housing affordability stress across Greater Boston ZIP
-    codes using Zillow home value and rent data combined with FRED macroeconomic
-    indicators. A ZIP code is considered high affordability stress in a given month if the
-    income needed to buy a home there puts it in the top 25% most expensive
-    ZIP-months across the dataset.
+    st.markdown(
+        """
+        Housing affordability can change quickly, and early warning signs are easy to miss.
+        This project combines housing and economic signals to answer a simple question:
+        **which neighborhoods are becoming harder to afford, and how fast?**
 
-    ## Models
-    - **SARIMAX** (Python) — forecasts ZIP-level home values using mortgage rates
-      as an exogenous variable. Fitted on six representative ZIP codes spanning all
-      location tiers and price ranges.
-    - **Bayesian Regression** (R) — predicts income needed to afford housing using
-      mortgage rates, unemployment, CPI, inventory, and location tier as features.
-    - **MLP Classifier** (Python) — manually implemented neural network that
-      classifies ZIP-months as high or low affordability stress.
+        ### Explore the story from three angles
+        - **Bayesian Model**: estimates the yearly income a household would need to afford a typical home.
+        - **MLP Results**: labels ZIP-months as higher-stress or lower-stress based on market conditions.
+        - **SARIMA Results**: forecasts how home values may move next, ZIP by ZIP.
 
-    ## Data Sources
-    - Zillow ZHVI and ZORI at ZIP code level
-    - Zillow metro-level inventory, days-to-pending, and income needed
-    - FRED: 30-year mortgage rate, national and Boston unemployment, CPI
+        ### Why this matters?
+        Affordability stress is not uniform. Two nearby neighborhoods can move in very different directions.
+        By combining these methods, the app helps you see both:
+        - the **current pressure** (how much income is needed now), and
+        - the **near-term direction** (where stress may go next).
+        """
+    )
 
-    """)
+    st.subheader("Quick visual guide")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info("🏠 **Affordability pressure**\n\nHow expensive is it to own a typical home in each ZIP?")
+    with c2:
+        st.info("📍 **Stress map by ZIP-month**\n\nWhich places are moving into high-stress conditions?")
+    with c3:
+        st.info("📈 **What may happen next**\n\nAre local home values likely to cool, hold, or keep rising?")
 
-    st.subheader("MLP Test Set Performance")
-    st.table(
-        pd.DataFrame(
-            {
-                "Metric": [
-                    "Accuracy",
-                    "High Stress Recall",
-                    "High Stress Precision",
-                    "Macro F1",
-                ],
-                "Value": [
-                    f"{accuracy:.1%}",
-                    f"{hs_recall:.1%}",
-                    f"{hs_precision:.1%}",
-                    f"{macro_f1:.2f}",
-                ],
-            }
+
+def render_bayesian() -> None:
+    st.title("Bayesian Model")
+    st.write("Predicts annual income needed using macro and housing market features.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("RMSE", money(bayes_rmse))
+    c2.metric("MAE", money(bayes_mae))
+    c3.metric("MAPE", f"{bayes_mape:.2f}%")
+
+    st.subheader("Posterior coefficient intervals")
+    show_image(PLOTS / "bayesian_coef_intervals.png")
+
+    st.subheader("Model fit over time")
+    st.caption("These two plots use the full test-period predictions.")
+
+    trend = (
+        bayes_preds.assign(abs_residual=bayes_preds["residual"].abs())
+        .groupby("date", as_index=False)
+        .agg(
+            actual_income_needed=("actual_income_needed", "mean"),
+            predicted_income_needed=("predicted_income_needed", "mean"),
+            abs_residual=("abs_residual", "mean"),
         )
     )
 
-# MLP Results
-with tab2:
-    st.title("MLP Classifier Results")
+    t1, t2 = st.columns(2)
+    with t1:
+        st.subheader("Monthly average income needed: actual vs model prediction")
+        st.line_chart(trend.set_index("date")[["actual_income_needed", "predicted_income_needed"]])
+    with t2:
+        st.subheader("Average absolute residual over time")
+        st.line_chart(trend.set_index("date")[["abs_residual"]])
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Accuracy", f"{accuracy:.1%}")
-    col2.metric("High Stress Recall", f"{hs_recall:.1%}")
-    col3.metric("High Stress Precision", f"{hs_precision:.1%}")
-    col4.metric("Macro F1", f"{macro_f1:.2f}")
 
-    st.divider()
+def render_mlp() -> None:
+    st.title("MLP Results")
+    st.write("Binary classifier for identifying high affordability stress ZIP-months.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Training Loss Curve")
-        st.image("outputs/plots/mlp_loss.png")
-    with col2:
-        st.subheader("Predicted Probability Distribution")
-        st.image("outputs/plots/mlp_hist.png")
-
-    st.divider()
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Confusion Matrix")
-        st.image("outputs/plots/mlp_confusion_matrix.png")
-    with col2:
-        st.subheader("ROC Curve")
-        st.image("outputs/plots/mlp_roc_curve.png")
-
-    st.divider()
-
-    st.subheader("Precision-Recall Curve")
-    st.image("outputs/plots/mlp_precision_recall.png")
-
-    st.divider()
-
-    st.subheader("Predictions Explorer")
-    filter_label = st.selectbox(
-        "Filter by true label", ["All", "High Stress (1)", "Low Stress (0)"]
+    st.caption(
+        "Decision threshold changes the probability cutoff for classifying a row as high stress. "
+        "Lower threshold increases recall but can increase false positives."
     )
-    if filter_label == "High Stress (1)":
-        st.dataframe(results[results["true_label"] == 1])
-    elif filter_label == "Low Stress (0)":
-        st.dataframe(results[results["true_label"] == 0])
-    else:
-        st.dataframe(results)
+    threshold = st.slider("Decision threshold", 0.0, 1.0, 0.5, 0.01)
 
-# SARIMA Results
-with tab3:
-    st.title("SARIMA Forecast Results")
-    st.markdown("""
-    SARIMAX(1,1,1)(1,1,1)[12] trained on 6 representative ZIP codes through end of 2022,
-    forecasting 2023–2024 with 30-year mortgage rate as exogenous variable.
-    """)
+    threshold_pred = (y_prob >= threshold).astype(int)
+    threshold_report = classification_report(y_true, threshold_pred, output_dict=True, zero_division=0)
+    threshold_conf = confusion_matrix(y_true, threshold_pred)
 
-    st.subheader("Forecast vs Actual (2023–2024)")
-    st.image("outputs/plots/sarima_forecast_all_zips.png")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Accuracy", f"{accuracy_score(y_true, threshold_pred):.1%}")
+    c2.metric("Recall (class 1)", f"{threshold_report['1']['recall']:.1%}")
+    c3.metric("Precision (class 1)", f"{threshold_report['1']['precision']:.1%}")
+    c4.metric("Macro F1", f"{threshold_report['macro avg']['f1-score']:.2f}")
 
-    st.divider()
+    p1, p2, p3 = st.columns(3)
+    with p1:
+        st.subheader("Training loss")
+        show_image(PLOTS / "mlp_loss.png")
+    with p2:
+        st.subheader("ROC")
+        show_image(PLOTS / "mlp_roc_curve.png")
+    with p3:
+        st.subheader("Precision-recall")
+        show_image(PLOTS / "mlp_precision_recall.png")
 
-    st.subheader("Error Metrics by ZIP Code")
-    st.dataframe(
-        sarima[["label", "mae", "rmse", "mape_pct"]].rename(
-            columns={
-                "label": "ZIP / Neighborhood",
-                "mae": "MAE ($)",
-                "rmse": "RMSE ($)",
-                "mape_pct": "MAPE (%)",
-            }
-        ),
-        hide_index=True,
-    )
+    a1, a2 = st.columns(2)
+    with a1:
+        st.subheader("Confusion matrix at current threshold")
+        st.dataframe(
+            pd.DataFrame(threshold_conf, index=["Actual 0", "Actual 1"], columns=["Pred 0", "Pred 1"]),
+            use_container_width=True,
+        )
+    with a2:
+        st.subheader("Prediction probability distribution")
+        show_image(PLOTS / "mlp_hist.png")
 
-    st.divider()
 
-    st.subheader("ACF / PACF Analysis")
-    zip_labels = {
-        "02126": "Mattapan (02126)",
-        "02116": "Back Bay (02116)",
-        "02150": "Chelsea (02150)",
-        "02139": "Cambridge (02139)",
-        "01840": "Lawrence (01840)",
-        "02481": "Wellesley (02481)",
-    }
-    selected = st.selectbox("Select ZIP code", list(zip_labels.values()))
-    zip_code = [k for k, v in zip_labels.items() if v == selected][0]
-    st.image(f"outputs/acf_pacf/acf_pacf_{zip_code}.png")
+def render_sarima() -> None:
+    st.title("SARIMA Results")
+    st.write("SARIMAX forecasts ZIP-level home values using mortgage rate as an exogenous variable.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Best MAPE", f"{best_sarima['mape_pct']:.2f}%")
+    c2.metric("Worst MAPE", f"{worst_sarima['mape_pct']:.2f}%")
+    c3.metric("ZIPs evaluated", f"{len(sarima):,}")
+
+    st.subheader("Forecast vs actual")
+    show_image(PLOTS / "sarima_forecast_all_zips.png")
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Error summary by ZIP")
+        table = (
+            sarima[["label", "mae", "rmse", "mape_pct"]]
+            .rename(columns={"label": "ZIP", "mae": "MAE ($)", "rmse": "RMSE ($)", "mape_pct": "MAPE (%)"})
+            .sort_values("MAPE (%)")
+        )
+        st.dataframe(table, hide_index=True, use_container_width=True)
+    with right:
+        st.subheader("ACF and PACF by ZIP")
+        zip_labels = {
+            "02126": "Mattapan (02126)",
+            "02116": "Back Bay (02116)",
+            "02150": "Chelsea (02150)",
+            "02139": "Cambridge (02139)",
+            "01840": "Lawrence (01840)",
+            "02481": "Wellesley (02481)",
+        }
+        selected_label = st.selectbox("Select ZIP", list(zip_labels.values()), key="sarima_zip")
+        selected_zip = [k for k, v in zip_labels.items() if v == selected_label][0]
+        show_image(ACF_PACF_DIR / f"acf_pacf_{selected_zip}.png")
+
+
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Home", "Bayesian Model", "MLP Results", "SARIMA Results"])
+
+if page == "Home":
+    render_home()
+elif page == "Bayesian Model":
+    render_bayesian()
+elif page == "MLP Results":
+    render_mlp()
+else:
+    render_sarima()
