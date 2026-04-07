@@ -7,25 +7,51 @@ output: html_document
 
 
 ```{r}
+# Set working directory to project root (two levels up from notebooks/modeling)
+project_root <- normalizePath("../..", mustWork = TRUE)
+setwd(project_root)
+
 library(brms)
 library(ggplot2)
+library(dplyr)
+library(tibble)
+library(patchwork)
+
+plot_dir <- "outputs/plots"
+if (!dir.exists(plot_dir)) dir.create(plot_dir, recursive = TRUE)
 ```
 
 ```{r}
-bayesian_data <- read.csv("/Users/samseelan/Desktop/housingAffordability/outputs/bayesian_data.csv")
-head(bayesian_data)
+bayesian_data <- read.csv("data/bayesian_data.csv")
+bayesian_data$date <- as.Date(bayesian_data$date)
 bayesian_data$location_tier <- as.factor(bayesian_data$location_tier)
+bayesian_data <- bayesian_data[order(bayesian_data$date), ]
+
+split_date <- as.Date("2024-01-01")
+train_data <- bayesian_data[bayesian_data$date < split_date, ]
+test_data  <- bayesian_data[bayesian_data$date >= split_date, ]
+
+head(bayesian_data)
 n <- nrow(bayesian_data)
 n
+
+n_train <- nrow(train_data)
+n_test <- nrow(test_data)
+cat("Train rows:", n_train, "\n")
+cat("Test rows:", n_test, "\n")
 ```
 ```{r}
 plot_df_hist <- data.frame(income_needed = bayesian_data$income_needed)
 
-ggplot(plot_df_hist, aes(x = income_needed)) +
+p_hist <- ggplot(plot_df_hist, aes(x = income_needed)) +
   geom_histogram(bins = 50, fill = "steelblue", color = "white") +
   labs(x = "Income Needed ($)", y = "Count",
        title = "Distribution of Income Needed") +
   theme_minimal()
+
+print(p_hist)
+ggsave(file.path(plot_dir, "bayesian_income_needed_hist.png"), p_hist,
+       width = 8, height = 5, dpi = 200)
 ```
 
 ```{r}
@@ -33,7 +59,7 @@ bayes_formula <- bf(income_needed ~ MORTGAGE30US + UNRATE + CPIAUCSL +
                       zhvi_yoy_pct + inventory + days_to_pending +
                       location_tier)
 
-get_prior(bayes_formula, data = bayesian_data, family = gaussian())
+get_prior(bayes_formula, data = train_data, family = gaussian())
 ```
 
 ```{r}
@@ -49,7 +75,7 @@ set.seed(42)
 
 bayes_fit <- brm(
   formula  = bayes_formula,
-  data     = bayesian_data,
+  data     = train_data,
   family   = gaussian(),
   prior    = bayes_priors,
   chains   = 4,
@@ -73,23 +99,31 @@ head(post_samples)
 ```{r}
 plot_df_mort <- data.frame(coef_val = post_samples$b_MORTGAGE30US)
 
-ggplot(plot_df_mort, aes(x = coef_val)) +
+p_mort <- ggplot(plot_df_mort, aes(x = coef_val)) +
   geom_density(fill = "steelblue", alpha = 0.5) +
   geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
   labs(x = "Coefficient Value", y = "Density",
        title = "Posterior Distribution: MORTGAGE30US") +
   theme_minimal()
+
+print(p_mort)
+ggsave(file.path(plot_dir, "bayesian_posterior_mortgage30us.png"), p_mort,
+       width = 8, height = 5, dpi = 200)
 ```
 
 ```{r}
 plot_df_zhvi <- data.frame(coef_val = post_samples$b_zhvi_yoy_pct)
 
-ggplot(plot_df_zhvi, aes(x = coef_val)) +
+p_zhvi <- ggplot(plot_df_zhvi, aes(x = coef_val)) +
   geom_density(fill = "darkorange", alpha = 0.5) +
   geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
   labs(x = "Coefficient Value", y = "Density",
        title = "Posterior Distribution: zhvi_yoy_pct") +
   theme_minimal()
+
+print(p_zhvi)
+ggsave(file.path(plot_dir, "bayesian_posterior_zhvi_yoy_pct.png"), p_zhvi,
+       width = 8, height = 5, dpi = 200)
 ```
 
 ```{r}
@@ -104,47 +138,112 @@ plot_df_coefs <- data.frame(
   upper    = post_summary$`u-95% CI`
 )
 
-ggplot(plot_df_coefs, aes(x = estimate, y = feature)) +
+mort_df <- plot_df_coefs %>% filter(feature == "MORTGAGE30US")
+other_df <- plot_df_coefs %>%
+  filter(feature != "MORTGAGE30US") %>%
+  mutate(feature = reorder(feature, estimate))
+
+base_theme <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+p_coef_left <- ggplot(mort_df, aes(x = estimate, y = feature)) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed", linewidth = 0.6) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.12, color = "steelblue", linewidth = 0.9) +
   geom_point(color = "steelblue", size = 3) +
-  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, color = "steelblue") +
-  geom_vline(xintercept = 0, color = "red", linetype = "dashed") +
-  labs(x = "Posterior Mean (95% Credible Interval)", y = "Feature",
-       title = "Bayesian Regression Coefficients") +
-  theme_minimal()
+  labs(
+    title = "MORTGAGE30US",
+    x = "Posterior Mean (95% Credible Interval)",
+    y = "Feature"
+  ) +
+  base_theme
+
+p_coef_right <- ggplot(other_df, aes(x = estimate, y = feature)) +
+  geom_vline(xintercept = 0, color = "red", linetype = "dashed", linewidth = 0.6) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.12, color = "steelblue", linewidth = 0.9) +
+  geom_point(color = "steelblue", size = 2.6) +
+  coord_cartesian(xlim = c(-1000, 2000)) +
+  labs(
+    title = "Other Predictors",
+    x = "Posterior Mean (95% Credible Interval)",
+    y = NULL
+  ) +
+  base_theme
+
+p_coef_split <- p_coef_left + p_coef_right +
+  plot_layout(widths = c(1, 2)) +
+  plot_annotation(title = "Bayesian Regression Coefficients (Split Scale)")
+
+print(p_coef_split)
+ggsave(file.path(plot_dir, "bayesian_coef_intervals.png"), p_coef_split,
+       width = 12, height = 6, dpi = 200)
 ```
 
 ```{r}
+png(file.path(plot_dir, "bayesian_pp_check.png"), width = 1200, height = 900, res = 150)
+pp_check(bayes_fit, ndraws = 50)
+dev.off()
+
 pp_check(bayes_fit, ndraws = 50)
 
 ```
 
 ```{r}
-preds_matrix <- posterior_predict(bayes_fit, newdata = bayesian_data)
+preds_matrix <- posterior_predict(bayes_fit, newdata = test_data)
 pred_means   <- colMeans(preds_matrix)
 
-residuals_vec <- bayesian_data$income_needed - pred_means
+residuals_vec <- test_data$income_needed - pred_means
 rmse <- sqrt(mean(residuals_vec^2))
 mae  <- mean(abs(residuals_vec))
+mape <- mean(abs(residuals_vec / test_data$income_needed)) * 100
+
+metrics_df <- data.frame(
+  split = "test",
+  n_rows = nrow(test_data),
+  rmse = rmse,
+  mae = mae,
+  mape_pct = mape
+)
+
+write.csv(metrics_df, "outputs/bayesian_metrics.csv", row.names = FALSE)
+
+predictions_df <- data.frame(
+  zip_code = test_data$zip_code,
+  date = test_data$date,
+  actual_income_needed = test_data$income_needed,
+  predicted_income_needed = pred_means,
+  residual = residuals_vec
+)
+
+write.csv(predictions_df, "outputs/bayesian_predictions.csv", row.names = FALSE)
 
 rmse
 mae
+mape
+metrics_df
 ```
 
 ```{r}
 plot_df_preds <- data.frame(
-  actual    = bayesian_data$income_needed,
+  actual    = test_data$income_needed,
   predicted = pred_means
 )
 
-ggplot(plot_df_preds, aes(x = actual, y = predicted)) +
+p_actual_pred <- ggplot(plot_df_preds, aes(x = actual, y = predicted)) +
   geom_point(alpha = 0.2, color = "steelblue", size = 0.8) +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   labs(x = "Actual Income Needed ($)", y = "Predicted Income Needed ($)",
        title = "Actual vs Predicted: Bayesian Linear Regression") +
   theme_minimal()
+
+print(p_actual_pred)
+ggsave(file.path(plot_dir, "bayesian_actual_vs_predicted.png"), p_actual_pred,
+       width = 8, height = 5, dpi = 200)
 ```
 
 ```{r}
-saveRDS(bayes_fit, "/Users/samseelan/Desktop/housingAffordability/outputs/bayesian_model.rds")
+saveRDS(bayes_fit, "outputs/bayesian_model.rds")
 ```
 
