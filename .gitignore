@@ -2,3 +2,6 @@ data/
 .venv/
 venv/
 __pycache__/
+
+poster/out/*
+!poster/out/main2.pdf
