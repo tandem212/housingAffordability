@@ -289,23 +289,9 @@ Boston ZIP Codes}}
   }
 
   % =============================================================
-  %  COLUMN 3 — Key Finding + Bayesian + Conclusions
+  %  COLUMN 3 — Bayesian + Key Finding + Conclusions
   % =============================================================
   \column{0.33}
-
-  {
-    \useblockstyle{AccentBorder}
-    \block{Key Finding}{
-      \begin{center}
-        \vspace{0.1em}
-        {\fontsize{44}{52}\selectfont\bfseries\color{NEUDarkRed}
-          Each +1 pp in the mortgage rate\\[4pt]
-          adds $\sim$\$10{,}000 to the income\\[4pt]
-        needed to buy a home.}
-      \end{center}
-    }
-  }
-  \useblockstyle{FlatHeader}
 
   \block{{\color{white}\Large 3}\quad Bayesian Regression}{
     \begin{tikzfigure}[Posterior means with 95\% credible intervals.
@@ -326,6 +312,20 @@ Boston ZIP Codes}}
       }
     \end{center}
   }
+
+  {
+    \useblockstyle{AccentBorder}
+    \block{Key Finding}{
+      \begin{center}
+        \vspace{0.1em}
+        {\fontsize{44}{52}\selectfont\bfseries\color{NEUDarkRed}
+          Each +1 pp in the mortgage rate\\[4pt]
+          adds $\sim$\$10{,}000 to the income\\[4pt]
+        needed to buy a home.}
+      \end{center}
+    }
+  }
+  \useblockstyle{FlatHeader}
 
   \block{Conclusions \& Future Work}{
     The affordability crisis is no longer confined to expensive
@@ -350,14 +350,14 @@ Boston ZIP Codes}}
     pressure will persist.
 
     \vspace{0.6em}
-    \textbf{Limitations.} All three models predict \emph{market-level} pressure
+    \textbf{Limitations:} All three models predict \emph{market-level} pressure
     but cannot identify which households within a ZIP code are at risk or have
     already been displaced. The income-needed variable is
     metro-level, flattening
     real variation across neighborhoods.
 
     \vspace{0.6em}
-    \textbf{Future work.} Incorporate ZIP-level demographic and income data to
+    \textbf{Future work:} Incorporate ZIP-level demographic and income data to
     predict whether current residents can \emph{afford to stay}, not
     just whether a
     neighborhood is expensive. Test Bayesian model robustness on a
