@@ -63,10 +63,10 @@ blockverticalspace=-0.15in]{tikzposter}
     \ifBlockHasTitle
     \draw[fill=NEUDarkRed, draw=none]
     (blockbody.south west) rectangle (blocktitle.north east);
-    \draw[fill=white, draw=NEUDarkRed, line width=3pt]
+    \draw[fill=NEULightBg, draw=NEUDarkRed, line width=3pt]
     (blockbody.south west) rectangle (blockbody.north east);
     \else
-    \draw[fill=white, draw=NEUDarkRed, line width=3pt]
+    \draw[fill=NEULightBg, draw=NEUDarkRed, line width=3pt]
     (blockbody.south west) rectangle (blockbody.north east);
     \fi
   \end{scope}
@@ -305,6 +305,7 @@ Boston ZIP Codes}}
       \end{center}
     }
   }
+  \useblockstyle{FlatHeader}
 
   \block{{\color{white}\Large 3}\quad Bayesian Regression}{
     \begin{tikzfigure}[Posterior means with 95\% credible intervals.
